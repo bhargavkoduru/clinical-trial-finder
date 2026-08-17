@@ -19,17 +19,53 @@ def search_studies(
     location: str,
     recruiting_only: bool,
     page_size: int,
-) -> list[dict[str, Any]]:
-    """Query the ClinicalTrials.gov v2 API and return normalized study dicts."""
-    params: dict[str, Any] = {
-        "query.cond": condition,
-        "query.locn": location,
-        "pageSize": page_size,
-        "format": "json",
-    }
-    if recruiting_only:
-        params["filter.overallStatus"] = "RECRUITING"
+    page_token: str = "",
+    use_term_search: bool = False,
+) -> dict[str, Any]:
+    """Query the ClinicalTrials.gov v2 API and return normalized studies plus paging info.
 
+    On the first page, if a strict condition-field search (query.cond) returns nothing,
+    this automatically retries with a broader free-text search (query.term) across the
+    whole record so close wording or synonyms aren't missed. Pass use_term_search=True
+    to keep using that broader mode on later pages (e.g. "Load more").
+    """
+
+    def run_query(term_mode: bool) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "query.locn": location,
+            "pageSize": page_size,
+            "format": "json",
+            "countTotal": "true",
+        }
+        params["query.term" if term_mode else "query.cond"] = condition
+        if recruiting_only:
+            params["filter.overallStatus"] = "RECRUITING"
+        if page_token:
+            params["pageToken"] = page_token
+        return _fetch(params)
+
+    payload = run_query(use_term_search)
+    studies = payload.get("studies")
+    broadened = use_term_search
+
+    if not use_term_search and not page_token and not studies:
+        payload = run_query(term_mode=True)
+        studies = payload.get("studies")
+        broadened = True
+
+    if not isinstance(studies, list):
+        studies = []
+
+    return {
+        "studies": [normalize_study(study) for study in studies if isinstance(study, dict)],
+        "total_count": payload.get("totalCount"),
+        "next_page_token": payload.get("nextPageToken"),
+        "broadened": broadened,
+    }
+
+
+def _fetch(params: dict[str, Any]) -> dict[str, Any]:
+    """Call the API with the given params and return the parsed JSON payload."""
     try:
         response = requests.get(API_URL, params=params, timeout=20)
         response.raise_for_status()
@@ -45,11 +81,10 @@ def search_studies(
     except ValueError as exc:
         raise ClinicalTrialsError("ClinicalTrials.gov returned a malformed response.") from exc
 
-    studies = payload.get("studies")
-    if not isinstance(studies, list):
-        return []
+    if not isinstance(payload, dict):
+        raise ClinicalTrialsError("ClinicalTrials.gov returned an unexpected response format.")
 
-    return [normalize_study(study) for study in studies if isinstance(study, dict)]
+    return payload
 
 
 def normalize_study(study: dict[str, Any]) -> dict[str, Any]:
@@ -62,6 +97,7 @@ def normalize_study(study: dict[str, Any]) -> dict[str, Any]:
     description = protocol.get("descriptionModule") or {}
     sponsors = protocol.get("sponsorCollaboratorsModule") or {}
     contacts = protocol.get("contactsLocationsModule") or {}
+    eligibility = protocol.get("eligibilityModule") or {}
 
     lead_sponsor = sponsors.get("leadSponsor") or {}
     locations = contacts.get("locations") or []
@@ -77,4 +113,9 @@ def normalize_study(study: dict[str, Any]) -> dict[str, Any]:
         "brief_summary": description.get("briefSummary"),
         "lead_sponsor": lead_sponsor.get("name"),
         "locations": locations,
+        "eligibility": {
+            "sex": eligibility.get("sex"),
+            "minimum_age": eligibility.get("minimumAge"),
+            "maximum_age": eligibility.get("maximumAge"),
+        },
     }

@@ -16,23 +16,27 @@ def _location_text(location: dict[str, Any]) -> str:
     return " ".join(str(part) for part in parts if part).lower()
 
 
-def best_matching_location(locations: list[dict[str, Any]], location_query: str) -> tuple[dict[str, Any] | None, bool]:
-    """Pick the location whose fields best match the query text.
+def matching_locations(
+    locations: list[dict[str, Any]], location_query: str, limit: int = 3
+) -> tuple[list[dict[str, Any]], bool]:
+    """Return up to `limit` locations, with any text matches on the query listed first.
 
-    Returns (location, matched) where matched is True only if the query text
-    was actually found in the selected location's fields.
+    Returns (locations, any_matched) where any_matched is True only if at least one
+    location's fields contained the submitted location text.
     """
     if not locations:
-        return None, False
+        return [], False
 
     query_tokens = [token for token in location_query.lower().replace(",", " ").split() if token]
-    if query_tokens:
-        for location in locations:
-            text = _location_text(location)
-            if all(token in text for token in query_tokens):
-                return location, True
+    matched, unmatched = [], []
+    for location in locations:
+        text = _location_text(location)
+        if query_tokens and all(token in text for token in query_tokens):
+            matched.append(location)
+        else:
+            unmatched.append(location)
 
-    return locations[0], False
+    return (matched + unmatched)[:limit], bool(matched)
 
 
 def score_study(

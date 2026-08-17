@@ -1,10 +1,15 @@
 """Streamlit MVP: search ClinicalTrials.gov for studies matching a condition and location."""
 from __future__ import annotations
 
+import csv
+import io
+
 import streamlit as st
 
 from services.clinicaltrials import ClinicalTrialsError, search_studies
-from services.ranking import best_matching_location, score_study
+from services.ranking import matching_locations, score_study
+
+PAGE_SIZE_OPTIONS = [10, 25, 50]
 
 st.set_page_config(page_title="Nearby Clinical Trials", page_icon="🧬")
 
@@ -14,83 +19,181 @@ st.write(
     "does not determine eligibility or provide medical advice."
 )
 
+params = st.query_params
+default_condition = params.get("condition", "")
+default_location = params.get("location", "")
+default_recruiting = params.get("recruiting", "1") != "0"
+try:
+    default_page_size = int(params.get("results", "25"))
+except ValueError:
+    default_page_size = 25
+if default_page_size not in PAGE_SIZE_OPTIONS:
+    default_page_size = 25
+
 with st.form("search_form"):
-    condition = st.text_input("Disease or condition", placeholder="e.g., rheumatoid arthritis")
-    location = st.text_input("Location", placeholder="e.g., Boston, MA or 02115")
-    recruiting_only = st.checkbox("Recruiting only", value=True)
-    page_size = st.selectbox("Results", options=[10, 25, 50], index=1)
+    condition = st.text_input(
+        "Disease or condition", value=default_condition, placeholder="e.g., rheumatoid arthritis"
+    )
+    st.caption('Tip: combine terms with OR, e.g. "diabetes OR prediabetes".')
+    location = st.text_input("Location", value=default_location, placeholder="e.g., Boston, MA or 02115")
+    recruiting_only = st.checkbox("Recruiting only", value=default_recruiting)
+    page_size = st.selectbox(
+        "Results", options=PAGE_SIZE_OPTIONS, index=PAGE_SIZE_OPTIONS.index(default_page_size)
+    )
     submitted = st.form_submit_button("Find trials")
 
 if submitted:
     if not condition.strip() or not location.strip():
         st.error("Please enter both a disease/condition and a location.")
+        st.session_state.pop("search", None)
     else:
+        st.query_params["condition"] = condition.strip()
+        st.query_params["location"] = location.strip()
+        st.query_params["recruiting"] = "1" if recruiting_only else "0"
+        st.query_params["results"] = str(page_size)
+
         with st.spinner("Searching ClinicalTrials.gov..."):
             try:
-                studies = search_studies(condition.strip(), location.strip(), recruiting_only, page_size)
+                result = search_studies(condition.strip(), location.strip(), recruiting_only, page_size)
             except ClinicalTrialsError as exc:
-                studies = None
+                st.session_state.pop("search", None)
                 st.error(str(exc))
-
-        if studies is not None:
-            if not studies:
-                st.info("No studies found matching your search. Try broadening your terms.")
             else:
-                ranked = []
-                for study in studies:
-                    site, matched = best_matching_location(study["locations"], location)
-                    score, reasons = score_study(
-                        study["overall_status"], matched, study["study_type"], study["phases"]
-                    )
-                    ranked.append((score, reasons, site, study))
+                st.session_state["search"] = {
+                    "condition": condition.strip(),
+                    "location": location.strip(),
+                    "recruiting_only": recruiting_only,
+                    "page_size": page_size,
+                    "studies": result["studies"],
+                    "total_count": result["total_count"],
+                    "next_page_token": result["next_page_token"],
+                    "broadened": result["broadened"],
+                }
 
-                ranked.sort(key=lambda item: item[0], reverse=True)
+search = st.session_state.get("search")
 
-                st.subheader(f"Found {len(ranked)} studies")
+if search:
+    if search["broadened"]:
+        st.info(
+            "No exact matches on the condition field — showing a broader text "
+            "search across study records instead."
+        )
 
-                for score, reasons, site, study in ranked:
-                    with st.container(border=True):
-                        title = study["brief_title"] or "Untitled study"
-                        nct_id = study["nct_id"] or "Unknown"
-                        st.markdown(f"### {title}")
+    if not search["studies"]:
+        st.info("No studies found matching your search. Try broadening your terms.")
+    else:
+        ranked = []
+        for study in search["studies"]:
+            sites, matched = matching_locations(study["locations"], search["location"])
+            score, reasons = score_study(
+                study["overall_status"], matched, study["study_type"], study["phases"]
+            )
+            ranked.append((score, reasons, sites, study))
+        ranked.sort(key=lambda item: item[0], reverse=True)
 
-                        col_info, col_score = st.columns([3, 1])
+        total = search["total_count"]
+        header = f"Showing {len(ranked)} of {total} matching studies" if total else f"Found {len(ranked)} studies"
+        st.subheader(header)
 
-                        with col_info:
-                            st.write(f"**NCT ID:** {nct_id}")
-                            st.write(f"**Status:** {study['overall_status'] or 'Unknown'}")
-                            if study["phases"]:
-                                st.write(f"**Phase:** {', '.join(study['phases'])}")
-                            st.write(f"**Study type:** {study['study_type'] or 'Unknown'}")
-                            st.write(f"**Lead sponsor:** {study['lead_sponsor'] or 'Unknown'}")
+        csv_buffer = io.StringIO()
+        writer = csv.writer(csv_buffer)
+        writer.writerow(["NCT ID", "Title", "Status", "Phase", "Study Type", "Sponsor", "Score", "Link"])
 
-                        with col_score:
-                            st.metric("Match score", f"{score}/100")
+        for score, reasons, sites, study in ranked:
+            nct_id = study["nct_id"] or "Unknown"
+            title = study["brief_title"] or "Untitled study"
+            link = f"https://clinicaltrials.gov/study/{nct_id}" if nct_id != "Unknown" else ""
+            writer.writerow(
+                [
+                    nct_id,
+                    title,
+                    study["overall_status"] or "",
+                    ", ".join(study["phases"]),
+                    study["study_type"] or "",
+                    study["lead_sponsor"] or "",
+                    score,
+                    link,
+                ]
+            )
 
-                        if study["brief_summary"]:
-                            st.write(study["brief_summary"])
+            with st.container(border=True):
+                st.markdown(f"### {title}")
 
-                        if site:
-                            site_parts = [
-                                site.get("facility"),
-                                site.get("city"),
-                                site.get("state"),
-                                site.get("country"),
-                                site.get("zip"),
-                            ]
-                            site_text = ", ".join(str(p) for p in site_parts if p)
-                            st.write(f"**Nearest listed site:** {site_text or 'No site details listed.'}")
-                        else:
-                            st.write("**Nearest listed site:** No site details listed.")
+                col_info, col_score = st.columns([3, 1])
 
-                        if reasons:
-                            st.caption("Why this score: " + "; ".join(reasons))
+                with col_info:
+                    st.write(f"**NCT ID:** {nct_id}")
+                    st.write(f"**Status:** {study['overall_status'] or 'Unknown'}")
+                    if study["phases"]:
+                        st.write(f"**Phase:** {', '.join(study['phases'])}")
+                    st.write(f"**Study type:** {study['study_type'] or 'Unknown'}")
+                    st.write(f"**Lead sponsor:** {study['lead_sponsor'] or 'Unknown'}")
 
-                        if nct_id and nct_id != "Unknown":
-                            st.link_button(
-                                "View official record",
-                                f"https://clinicaltrials.gov/study/{nct_id}",
-                            )
+                    eligibility = study["eligibility"]
+                    eligibility_bits = []
+                    if eligibility["sex"]:
+                        eligibility_bits.append(eligibility["sex"])
+                    if eligibility["minimum_age"] or eligibility["maximum_age"]:
+                        min_age = eligibility["minimum_age"] or "N/A"
+                        max_age = eligibility["maximum_age"] or "N/A"
+                        eligibility_bits.append(f"{min_age} – {max_age}")
+                    if eligibility_bits:
+                        st.write(f"**Listed eligibility:** {' | '.join(eligibility_bits)}")
+
+                with col_score:
+                    st.metric("Match score", f"{score}/100")
+
+                if study["brief_summary"]:
+                    with st.expander("Brief summary"):
+                        st.write(study["brief_summary"])
+
+                if sites:
+                    st.write("**Nearby listed sites:**")
+                    for site in sites:
+                        site_parts = [
+                            site.get("facility"),
+                            site.get("city"),
+                            site.get("state"),
+                            site.get("country"),
+                            site.get("zip"),
+                        ]
+                        site_text = ", ".join(str(p) for p in site_parts if p)
+                        st.write(f"- {site_text or 'No site details listed.'}")
+                else:
+                    st.write("**Nearby listed sites:** No site details listed.")
+
+                if reasons:
+                    st.caption("Why this score: " + "; ".join(reasons))
+
+                if nct_id != "Unknown":
+                    st.link_button("View official record", link)
+
+        st.download_button(
+            "Download results as CSV",
+            data=csv_buffer.getvalue(),
+            file_name="clinical_trials_results.csv",
+            mime="text/csv",
+        )
+
+        if search["next_page_token"]:
+            if st.button("Load more results"):
+                with st.spinner("Loading more..."):
+                    try:
+                        more = search_studies(
+                            search["condition"],
+                            search["location"],
+                            search["recruiting_only"],
+                            search["page_size"],
+                            page_token=search["next_page_token"],
+                            use_term_search=search["broadened"],
+                        )
+                    except ClinicalTrialsError as exc:
+                        st.error(str(exc))
+                    else:
+                        search["studies"] = search["studies"] + more["studies"]
+                        search["next_page_token"] = more["next_page_token"]
+                        st.session_state["search"] = search
+                        st.rerun()
 
 st.divider()
 st.caption(
