@@ -66,6 +66,11 @@ generated.
   enrollment count; full timeline (start/primary completion/completion/last
   updated); interventions being tested; and full eligibility criteria text —
   all pulled from fields ClinicalTrials.gov already publishes per study.
+- **v5 — Score transparency**: each result now has a "How this score was
+  calculated" breakdown listing all four scoring criteria (recruiting status,
+  location match, study type, phase) with points earned vs. possible for each —
+  not just the criteria that scored. The scoring rules themselves are
+  unchanged; this only makes the existing calculation visible.
 
 ## Disclaimer
 
