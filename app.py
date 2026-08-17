@@ -345,3 +345,7 @@ st.caption(
     "ClinicalTrials.gov listings may be incomplete or out of date. "
     "Contact the study site to confirm availability and eligibility."
 )
+st.markdown(
+    "New to clinical trials? Read ClinicalTrials.gov's official guide: "
+    "[How to Join a Study](https://clinicaltrials.gov/find-studies/for-patients/how-to-join)."
+)

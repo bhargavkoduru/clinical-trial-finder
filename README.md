@@ -93,6 +93,10 @@ generated.
   the broader fallback search), using the API's own `ConditionsModule` data.
   Also added a "Compare eligibility criteria" multiselect to view several
   trials' full eligibility text side by side.
+- **v7 — Patient guidance link**: added a link to ClinicalTrials.gov's own
+  official guide, [How to Join a
+  Study](https://clinicaltrials.gov/find-studies/for-patients/how-to-join), next
+  to the disclaimer.
 
 ## Disclaimer
 
