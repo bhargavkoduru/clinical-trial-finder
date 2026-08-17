@@ -33,9 +33,23 @@ GET https://clinicaltrials.gov/api/v2/studies
 - **City/state input** (e.g. `Boston, MA`) falls back to text matching against
   each site's facility, city, state, country, and ZIP fields — not geographic
   distance.
-- Match scores are a deterministic, explainable ranking signal based on
-  recruitment status, location match (text or radius), study type, and phase
-  presence. They are **not** a measure of medical eligibility or suitability.
+## Match score (0–100)
+
+A deterministic, explainable ranking signal — **not** a measure of medical
+eligibility or suitability:
+
+| Criterion | Points |
+|---|---|
+| Recruitment status: `RECRUITING` | 35 |
+| Recruitment status: `NOT_YET_RECRUITING` | 15 |
+| Recruitment status: anything else | 0 |
+| Location match — graduated by real distance when searching by ZIP (30 at the site, tapering to 0 at the edge of the radius); flat 30/0 for city/state text matching | up to 30 |
+| Study type is interventional | 10 |
+| Study phase is specified | 10 |
+| Your searched condition is explicitly listed in the study's own conditions (vs. only matching through the broader fallback search) | 15 |
+
+Each result shows a "How this score was calculated" breakdown with every
+criterion's earned vs. possible points, not just the ones that scored.
 
 ## What's shown per study
 
@@ -71,6 +85,14 @@ generated.
   location match, study type, phase) with points earned vs. possible for each —
   not just the criteria that scored. The scoring rules themselves are
   unchanged; this only makes the existing calculation visible.
+- **v6 — Scoring rubric upgrade + eligibility comparison**: recruitment status
+  now gives partial credit to `NOT_YET_RECRUITING` studies instead of scoring
+  them the same as closed trials; location match is graduated by real distance
+  (not just pass/fail) when searching by ZIP; a new criterion rewards studies
+  where the searched condition is explicitly listed (vs. only surfacing via
+  the broader fallback search), using the API's own `ConditionsModule` data.
+  Also added a "Compare eligibility criteria" multiselect to view several
+  trials' full eligibility text side by side.
 
 ## Disclaimer
 

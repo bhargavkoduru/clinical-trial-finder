@@ -118,8 +118,12 @@ def normalize_study(study: dict[str, Any]) -> dict[str, Any]:
     contacts = protocol.get("contactsLocationsModule") or {}
     eligibility = protocol.get("eligibilityModule") or {}
     arms_interventions = protocol.get("armsInterventionsModule") or {}
+    conditions_module = protocol.get("conditionsModule") or {}
 
     lead_sponsor = sponsors.get("leadSponsor") or {}
+    conditions = conditions_module.get("conditions") or []
+    if not isinstance(conditions, list):
+        conditions = []
     locations = contacts.get("locations") or []
     if not isinstance(locations, list):
         locations = []
@@ -140,6 +144,7 @@ def normalize_study(study: dict[str, Any]) -> dict[str, Any]:
         "brief_summary": description.get("briefSummary"),
         "lead_sponsor": lead_sponsor.get("name"),
         "locations": locations,
+        "conditions": conditions,
         "eligibility": {
             "sex": eligibility.get("sex"),
             "minimum_age": eligibility.get("minimumAge"),

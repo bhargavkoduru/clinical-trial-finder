@@ -7,7 +7,14 @@ import io
 import streamlit as st
 
 from services.clinicaltrials import ClinicalTrialsError, search_studies
-from services.ranking import matching_locations, nearby_locations, score_breakdown, score_study
+from services.ranking import (
+    condition_is_specific,
+    location_score,
+    matching_locations,
+    nearby_locations,
+    score_breakdown,
+    score_study,
+)
 
 PAGE_SIZE_OPTIONS = [10, 25, 50]
 RADIUS_OPTIONS = [10, 25, 50, 100]
@@ -111,14 +118,19 @@ if search:
             if geo_center:
                 lat, lon = geo_center
                 sites, matched = nearby_locations(study["locations"], lat, lon, search["radius_miles"])
+                nearest_distance = sites[0][1] if sites else None
+                loc_points = location_score(matched, nearest_distance, search["radius_miles"])
             else:
                 plain_sites, matched = matching_locations(study["locations"], search["location"])
                 sites = [(site, None) for site in plain_sites]
+                loc_points = location_score(matched, None, None)
+
+            specific = condition_is_specific(study["conditions"], search["condition"])
             score, reasons = score_study(
-                study["overall_status"], matched, study["study_type"], study["phases"]
+                study["overall_status"], study["study_type"], study["phases"], loc_points, specific
             )
             breakdown = score_breakdown(
-                study["overall_status"], matched, study["study_type"], study["phases"]
+                study["overall_status"], study["study_type"], study["phases"], loc_points, specific
             )
             ranked.append((score, reasons, breakdown, sites, study))
         ranked.sort(key=lambda item: item[0], reverse=True)
@@ -256,12 +268,14 @@ if search:
                     st.caption("Why this score: " + "; ".join(reasons))
 
                 with st.expander(f"How this {score}/100 score was calculated"):
-                    for label, points, earned in breakdown:
-                        icon = "✅" if earned else "◻️"
-                        st.write(f"{icon} {label} — {'+' if earned else ''}{points if earned else 0} of {points} points")
+                    for label, earned, possible in breakdown:
+                        icon = "✅" if earned == possible else ("➖" if earned else "◻️")
+                        st.write(f"{icon} {label} — +{earned} of {possible} points")
                     st.caption(
-                        "This score reflects recruitment status, location match, study type, "
-                        "and phase specificity — it is not a measure of medical eligibility."
+                        "This score reflects recruitment status, location match (real distance "
+                        "when searching by ZIP), study type, phase specificity, and whether your "
+                        "searched condition is explicitly listed for the study — it is not a "
+                        "measure of medical eligibility."
                     )
 
                 if nct_id != "Unknown":
@@ -273,6 +287,37 @@ if search:
             file_name="clinical_trials_results.csv",
             mime="text/csv",
         )
+
+        st.divider()
+        st.subheader("Compare eligibility criteria")
+        compare_options = {
+            f"{study['brief_title'] or 'Untitled study'} ({study['nct_id'] or 'Unknown'})": study
+            for _, _, _, _, study in ranked
+        }
+        selected_labels = st.multiselect(
+            "Select trials from the results above to compare their eligibility side by side",
+            options=list(compare_options.keys()),
+        )
+        if selected_labels:
+            compare_cols = st.columns(len(selected_labels))
+            for col, label in zip(compare_cols, selected_labels):
+                compare_study = compare_options[label]
+                with col:
+                    st.markdown(f"**{compare_study['brief_title'] or 'Untitled study'}**")
+                    st.caption(compare_study["nct_id"] or "Unknown")
+                    st.write(f"**Status:** {compare_study['overall_status'] or 'Unknown'}")
+                    if compare_study["phases"]:
+                        st.write(f"**Phase:** {', '.join(compare_study['phases'])}")
+                    elig = compare_study["eligibility"]
+                    elig_bits = []
+                    if elig["sex"]:
+                        elig_bits.append(elig["sex"])
+                    if elig["minimum_age"] or elig["maximum_age"]:
+                        elig_bits.append(f"{elig['minimum_age'] or 'N/A'} – {elig['maximum_age'] or 'N/A'}")
+                    if elig_bits:
+                        st.write(f"**Listed eligibility:** {' | '.join(elig_bits)}")
+                    st.markdown("**Full eligibility criteria:**")
+                    st.text(elig["criteria"] or "Not listed.")
 
         if search["next_page_token"]:
             if st.button("Load more results"):
