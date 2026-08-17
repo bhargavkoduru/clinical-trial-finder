@@ -67,6 +67,21 @@ def nearby_locations(
     return scored[:limit], within_radius
 
 
+def score_breakdown(
+    overall_status: str | None,
+    location_matched: bool,
+    study_type: str | None,
+    phases: list[str],
+) -> list[tuple[str, int, bool]]:
+    """Return every scoring criterion as (label, points, earned), in the order they're applied."""
+    return [
+        ("Study is currently recruiting", 40, overall_status == "RECRUITING"),
+        ("A study site is near your submitted location", 30, location_matched),
+        ("Study type is interventional", 10, study_type == "INTERVENTIONAL"),
+        ("Study phase is specified", 10, bool(phases)),
+    ]
+
+
 def score_study(
     overall_status: str | None,
     location_matched: bool,
@@ -74,23 +89,7 @@ def score_study(
     phases: list[str],
 ) -> tuple[int, list[str]]:
     """Score a study 0-100 based on transparent, additive rules. Not a measure of eligibility."""
-    score = 0
-    reasons: list[str] = []
-
-    if overall_status == "RECRUITING":
-        score += 40
-        reasons.append("Study is currently recruiting (+40)")
-
-    if location_matched:
-        score += 30
-        reasons.append("A study site is near your submitted location (+30)")
-
-    if study_type == "INTERVENTIONAL":
-        score += 10
-        reasons.append("Study type is interventional (+10)")
-
-    if phases:
-        score += 10
-        reasons.append("Study phase is specified (+10)")
-
+    criteria = score_breakdown(overall_status, location_matched, study_type, phases)
+    score = sum(points for _, points, earned in criteria if earned)
+    reasons = [f"{label} (+{points})" for label, points, earned in criteria if earned]
     return min(score, 100), reasons

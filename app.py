@@ -7,7 +7,7 @@ import io
 import streamlit as st
 
 from services.clinicaltrials import ClinicalTrialsError, search_studies
-from services.ranking import matching_locations, nearby_locations, score_study
+from services.ranking import matching_locations, nearby_locations, score_breakdown, score_study
 
 PAGE_SIZE_OPTIONS = [10, 25, 50]
 RADIUS_OPTIONS = [10, 25, 50, 100]
@@ -117,7 +117,10 @@ if search:
             score, reasons = score_study(
                 study["overall_status"], matched, study["study_type"], study["phases"]
             )
-            ranked.append((score, reasons, sites, study))
+            breakdown = score_breakdown(
+                study["overall_status"], matched, study["study_type"], study["phases"]
+            )
+            ranked.append((score, reasons, breakdown, sites, study))
         ranked.sort(key=lambda item: item[0], reverse=True)
 
         total = search["total_count"]
@@ -126,7 +129,7 @@ if search:
 
         map_points = [
             {"lat": site.get("geoPoint", {}).get("lat"), "lon": site.get("geoPoint", {}).get("lon")}
-            for _, _, sites, _ in ranked
+            for _, _, _, sites, _ in ranked
             for site, _ in sites[:1]
             if site.get("geoPoint")
         ]
@@ -139,7 +142,7 @@ if search:
             ["NCT ID", "Title", "Status", "Phase", "Study Type", "Sponsor", "Score", "Nearest Site (mi)", "Link"]
         )
 
-        for score, reasons, sites, study in ranked:
+        for score, reasons, breakdown, sites, study in ranked:
             nct_id = study["nct_id"] or "Unknown"
             title = study["brief_title"] or "Untitled study"
             link = f"https://clinicaltrials.gov/study/{nct_id}" if nct_id != "Unknown" else ""
@@ -251,6 +254,15 @@ if search:
 
                 if reasons:
                     st.caption("Why this score: " + "; ".join(reasons))
+
+                with st.expander(f"How this {score}/100 score was calculated"):
+                    for label, points, earned in breakdown:
+                        icon = "✅" if earned else "◻️"
+                        st.write(f"{icon} {label} — {'+' if earned else ''}{points if earned else 0} of {points} points")
+                    st.caption(
+                        "This score reflects recruitment status, location match, study type, "
+                        "and phase specificity — it is not a measure of medical eligibility."
+                    )
 
                 if nct_id != "Unknown":
                     st.link_button("View official record", link)
