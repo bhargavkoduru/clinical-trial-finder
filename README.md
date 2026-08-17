@@ -22,13 +22,20 @@ Queries the official ClinicalTrials.gov v2 API:
 GET https://clinicaltrials.gov/api/v2/studies
 ```
 
-## Limitations
+## Location matching
 
-- Location matching is text-based (facility, city, state, country, ZIP), not
-  geographic distance. There is no geocoding or radius search in this MVP.
+- **ZIP code input** (e.g. `02115`) triggers a real distance search: the ZIP is
+  resolved to coordinates using a bundled, offline centroid table
+  (`services/data/zip_centroids.csv`, derived from the US Census Bureau's public
+  domain 2023 ZCTA Gazetteer file), and the app queries the ClinicalTrials.gov
+  `filter.geo` distance filter against each study site's real `geoPoint`
+  coordinates. No live geocoding service is called.
+- **City/state input** (e.g. `Boston, MA`) falls back to text matching against
+  each site's facility, city, state, country, and ZIP fields — not geographic
+  distance.
 - Match scores are a deterministic, explainable ranking signal based on
-  recruitment status, location text match, study type, and phase presence.
-  They are **not** a measure of medical eligibility or suitability.
+  recruitment status, location match (text or radius), study type, and phase
+  presence. They are **not** a measure of medical eligibility or suitability.
 
 ## Disclaimer
 

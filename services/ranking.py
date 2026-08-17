@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .geodata import haversine_miles
+
 
 def _location_text(location: dict[str, Any]) -> str:
     """Combine a location's facility, city, state, country, and ZIP into one lowercase string."""
@@ -39,6 +41,32 @@ def matching_locations(
     return (matched + unmatched)[:limit], bool(matched)
 
 
+def nearby_locations(
+    locations: list[dict[str, Any]],
+    center_lat: float,
+    center_lon: float,
+    radius_miles: float,
+    limit: int = 3,
+) -> tuple[list[tuple[dict[str, Any], float]], bool]:
+    """Return up to `limit` locations sorted by real distance from (center_lat, center_lon).
+
+    Only considers locations with geoPoint data. Returns (list of (location, distance_miles)
+    tuples nearest first, within_radius) where within_radius is True if the nearest site is
+    within radius_miles.
+    """
+    scored = []
+    for location in locations:
+        geo = location.get("geoPoint") or {}
+        lat, lon = geo.get("lat"), geo.get("lon")
+        if lat is None or lon is None:
+            continue
+        scored.append((location, haversine_miles(center_lat, center_lon, lat, lon)))
+
+    scored.sort(key=lambda item: item[1])
+    within_radius = bool(scored) and scored[0][1] <= radius_miles
+    return scored[:limit], within_radius
+
+
 def score_study(
     overall_status: str | None,
     location_matched: bool,
@@ -55,7 +83,7 @@ def score_study(
 
     if location_matched:
         score += 30
-        reasons.append("A study site matches your submitted location (+30)")
+        reasons.append("A study site is near your submitted location (+30)")
 
     if study_type == "INTERVENTIONAL":
         score += 10

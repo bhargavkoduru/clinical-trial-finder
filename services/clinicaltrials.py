@@ -6,6 +6,8 @@ from typing import Any
 import requests
 import streamlit as st
 
+from .geodata import zip_to_latlon
+
 API_URL = "https://clinicaltrials.gov/api/v2/studies"
 
 
@@ -21,22 +23,32 @@ def search_studies(
     page_size: int,
     page_token: str = "",
     use_term_search: bool = False,
+    radius_miles: int = 25,
 ) -> dict[str, Any]:
     """Query the ClinicalTrials.gov v2 API and return normalized studies plus paging info.
+
+    If location is a recognized 5-digit US ZIP, this uses the API's filter.geo distance
+    filter against a bundled offline ZIP centroid table for a real radius search. Otherwise
+    it falls back to a text search (query.locn) against site facility/city/state/etc.
 
     On the first page, if a strict condition-field search (query.cond) returns nothing,
     this automatically retries with a broader free-text search (query.term) across the
     whole record so close wording or synonyms aren't missed. Pass use_term_search=True
     to keep using that broader mode on later pages (e.g. "Load more").
     """
+    geo_center = zip_to_latlon(location)
 
     def run_query(term_mode: bool) -> dict[str, Any]:
         params: dict[str, Any] = {
-            "query.locn": location,
             "pageSize": page_size,
             "format": "json",
             "countTotal": "true",
         }
+        if geo_center:
+            lat, lon = geo_center
+            params["filter.geo"] = f"distance({lat},{lon},{radius_miles}mi)"
+        else:
+            params["query.locn"] = location
         params["query.term" if term_mode else "query.cond"] = condition
         if recruiting_only:
             params["filter.overallStatus"] = "RECRUITING"
@@ -61,6 +73,8 @@ def search_studies(
         "total_count": payload.get("totalCount"),
         "next_page_token": payload.get("nextPageToken"),
         "broadened": broadened,
+        "geo_center": geo_center,
+        "radius_miles": radius_miles if geo_center else None,
     }
 
 
