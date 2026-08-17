@@ -37,6 +37,16 @@ GET https://clinicaltrials.gov/api/v2/studies
   recruitment status, location match (text or radius), study type, and phase
   presence. They are **not** a measure of medical eligibility or suitability.
 
+## What's shown per study
+
+Beyond title, status, phase, sponsor, and eligibility summary, each result also
+shows: enrollment count, study timeline (start/completion/last updated),
+interventions being tested, the study's central contact and per-site contacts
+(name/phone/email, as published by ClinicalTrials.gov), the full eligibility
+criteria text, and a map of nearby site locations. All of this is public data
+already on the study's ClinicalTrials.gov record — nothing here is inferred or
+generated.
+
 ## Disclaimer
 
 This tool is informational only. It does not provide medical advice and does

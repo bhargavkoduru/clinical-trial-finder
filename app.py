@@ -124,6 +124,15 @@ if search:
         header = f"Showing {len(ranked)} of {total} matching studies" if total else f"Found {len(ranked)} studies"
         st.subheader(header)
 
+        map_points = [
+            {"lat": site.get("geoPoint", {}).get("lat"), "lon": site.get("geoPoint", {}).get("lon")}
+            for _, _, sites, _ in ranked
+            for site, _ in sites[:1]
+            if site.get("geoPoint")
+        ]
+        if map_points:
+            st.map(map_points, size=40)
+
         csv_buffer = io.StringIO()
         writer = csv.writer(csv_buffer)
         writer.writerow(
@@ -173,12 +182,48 @@ if search:
                     if eligibility_bits:
                         st.write(f"**Listed eligibility:** {' | '.join(eligibility_bits)}")
 
+                    enrollment = study["enrollment"]
+                    if enrollment["count"]:
+                        type_bit = f" ({enrollment['type']})" if enrollment["type"] else ""
+                        st.write(f"**Enrollment:** {enrollment['count']}{type_bit}")
+
                 with col_score:
                     st.metric("Match score", f"{score}/100")
 
                 if study["brief_summary"]:
                     with st.expander("Brief summary"):
                         st.write(study["brief_summary"])
+
+                dates = study["dates"]
+                if any(dates.values()):
+                    with st.expander("Study timeline"):
+                        if dates["start"]:
+                            st.write(f"**Start date:** {dates['start']}")
+                        if dates["primary_completion"]:
+                            st.write(f"**Primary completion:** {dates['primary_completion']}")
+                        if dates["completion"]:
+                            st.write(f"**Completion:** {dates['completion']}")
+                        if dates["last_update_posted"]:
+                            st.write(f"**Last updated on ClinicalTrials.gov:** {dates['last_update_posted']}")
+
+                if study["interventions"]:
+                    with st.expander("Interventions"):
+                        for interv in study["interventions"]:
+                            label = interv["name"] or "Unnamed intervention"
+                            type_bit = f" ({interv['type']})" if interv["type"] else ""
+                            st.write(f"**{label}{type_bit}**")
+                            if interv["description"]:
+                                st.caption(interv["description"])
+
+                if eligibility["criteria"]:
+                    with st.expander("Full eligibility criteria (as listed by the study)"):
+                        st.text(eligibility["criteria"])
+
+                if study["central_contacts"]:
+                    st.write("**Study contact:**")
+                    for c in study["central_contacts"]:
+                        bits = [b for b in [c["name"], c["phone"], c["email"]] if b]
+                        st.write(f"- {' — '.join(bits)}" if bits else "- Contact listed, no details available.")
 
                 if sites:
                     st.write("**Nearby listed sites:**")
@@ -193,6 +238,14 @@ if search:
                         site_text = ", ".join(str(p) for p in site_parts if p) or "No site details listed."
                         prefix = f"{distance:.1f} mi — " if distance is not None else ""
                         st.write(f"- {prefix}{site_text}")
+
+                        site_contacts = site.get("contacts") or []
+                        for c in site_contacts:
+                            if not isinstance(c, dict):
+                                continue
+                            bits = [b for b in [c.get("name"), c.get("phone"), c.get("email")] if b]
+                            if bits:
+                                st.caption(f"  Contact: {' — '.join(bits)}")
                 else:
                     st.write("**Nearby listed sites:** No site details listed.")
 

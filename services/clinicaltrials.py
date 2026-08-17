@@ -101,6 +101,11 @@ def _fetch(params: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def _struct_date(struct: dict[str, Any] | None) -> str | None:
+    """Pull the date string out of a StatusModule date struct (e.g. startDateStruct)."""
+    return (struct or {}).get("date")
+
+
 def normalize_study(study: dict[str, Any]) -> dict[str, Any]:
     """Extract the fields we care about from a raw study record, tolerating missing data."""
     protocol = study.get("protocolSection") or {}
@@ -112,11 +117,19 @@ def normalize_study(study: dict[str, Any]) -> dict[str, Any]:
     sponsors = protocol.get("sponsorCollaboratorsModule") or {}
     contacts = protocol.get("contactsLocationsModule") or {}
     eligibility = protocol.get("eligibilityModule") or {}
+    arms_interventions = protocol.get("armsInterventionsModule") or {}
 
     lead_sponsor = sponsors.get("leadSponsor") or {}
     locations = contacts.get("locations") or []
     if not isinstance(locations, list):
         locations = []
+    central_contacts = contacts.get("centralContacts") or []
+    if not isinstance(central_contacts, list):
+        central_contacts = []
+    interventions = arms_interventions.get("interventions") or []
+    if not isinstance(interventions, list):
+        interventions = []
+    enrollment = design.get("enrollmentInfo") or {}
 
     return {
         "nct_id": identification.get("nctId"),
@@ -131,5 +144,35 @@ def normalize_study(study: dict[str, Any]) -> dict[str, Any]:
             "sex": eligibility.get("sex"),
             "minimum_age": eligibility.get("minimumAge"),
             "maximum_age": eligibility.get("maximumAge"),
+            "criteria": eligibility.get("eligibilityCriteria"),
         },
+        "enrollment": {
+            "count": enrollment.get("count"),
+            "type": enrollment.get("type"),
+        },
+        "dates": {
+            "start": _struct_date(status.get("startDateStruct")),
+            "primary_completion": _struct_date(status.get("primaryCompletionDateStruct")),
+            "completion": _struct_date(status.get("completionDateStruct")),
+            "last_update_posted": _struct_date(status.get("lastUpdatePostDateStruct")),
+        },
+        "central_contacts": [
+            {
+                "name": c.get("name"),
+                "role": c.get("role"),
+                "phone": c.get("phone"),
+                "email": c.get("email"),
+            }
+            for c in central_contacts
+            if isinstance(c, dict)
+        ],
+        "interventions": [
+            {
+                "type": i.get("type"),
+                "name": i.get("name"),
+                "description": i.get("description"),
+            }
+            for i in interventions
+            if isinstance(i, dict)
+        ],
     }
