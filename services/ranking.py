@@ -51,11 +51,13 @@ def nearby_locations(
     radius_miles: float,
     limit: int = 3,
 ) -> tuple[list[tuple[dict[str, Any], float]], bool]:
-    """Return up to `limit` locations sorted by real distance from (center_lat, center_lon).
+    """Return up to `limit` locations within radius_miles, sorted by real distance.
 
-    Only considers locations with geoPoint data. Returns (list of (location, distance_miles)
-    tuples nearest first, within_radius) where within_radius is True if the nearest site is
-    within radius_miles.
+    Only considers locations with geoPoint data, and only those actually within
+    radius_miles — a study can have sites far outside the search area too, and
+    those are excluded rather than just sorted to the back. Returns (list of
+    (location, distance_miles) tuples nearest first, within_radius) where
+    within_radius is True if at least one site was within the radius.
     """
     scored = []
     for location in locations:
@@ -63,10 +65,12 @@ def nearby_locations(
         lat, lon = geo.get("lat"), geo.get("lon")
         if lat is None or lon is None:
             continue
-        scored.append((location, haversine_miles(center_lat, center_lon, lat, lon)))
+        distance = haversine_miles(center_lat, center_lon, lat, lon)
+        if distance <= radius_miles:
+            scored.append((location, distance))
 
     scored.sort(key=lambda item: item[1])
-    within_radius = bool(scored) and scored[0][1] <= radius_miles
+    within_radius = bool(scored)
     return scored[:limit], within_radius
 
 
