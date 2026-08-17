@@ -173,10 +173,11 @@ if search:
         st.subheader(header)
 
         map_points = [
-            {"lat": site.get("geoPoint", {}).get("lat"), "lon": site.get("geoPoint", {}).get("lon")}
+            {"lat": geo["lat"], "lon": geo["lon"]}
             for _, _, _, sites, _ in ranked
-            for site, _ in sites[:1]
-            if site.get("geoPoint")
+            for site, _ in sites
+            for geo in [site.get("geoPoint") or {}]
+            if geo.get("lat") is not None and geo.get("lon") is not None
         ]
         if map_points:
             st.map(map_points, size=40)
