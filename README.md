@@ -47,6 +47,26 @@ criteria text, and a map of nearby site locations. All of this is public data
 already on the study's ClinicalTrials.gov record — nothing here is inferred or
 generated.
 
+## Version history
+
+- **v1 — Initial MVP**: core search (condition + location + recruiting-only +
+  result count), deterministic 0–100 match scoring, text-based location
+  matching, official ClinicalTrials.gov links.
+- **v2 — Pagination, eligibility, multi-site, export**: "Load more" pagination
+  using the API's `pageToken`/`totalCount`; listed eligibility (sex/age range);
+  up to 3 nearby sites per study instead of just one; CSV export; shareable
+  search URLs via query params; automatic fallback from a strict `query.cond`
+  search to a broader `query.term` search when a condition returns no results.
+- **v3 — Real distance search**: ZIP code input now triggers true radius search
+  using the API's `filter.geo` distance filter against each site's real
+  `geoPoint` coordinates, resolved through a bundled offline US ZIP centroid
+  table (no live geocoding service). City/state input still uses text matching.
+- **v4 — Site map, contacts, and study detail**: an `st.map` overview of nearby
+  site locations; central and per-site study contacts (name/phone/email); study
+  enrollment count; full timeline (start/primary completion/completion/last
+  updated); interventions being tested; and full eligibility criteria text —
+  all pulled from fields ClinicalTrials.gov already publishes per study.
+
 ## Disclaimer
 
 This tool is informational only. It does not provide medical advice and does
