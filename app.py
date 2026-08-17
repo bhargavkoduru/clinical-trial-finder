@@ -26,6 +26,34 @@ st.write(
     "Find recruiting clinical studies near you. Informational only; this tool "
     "does not determine eligibility or provide medical advice."
 )
+st.caption(
+    "Data comes directly from ClinicalTrials.gov, the U.S. National Library of "
+    "Medicine's official registry of clinical studies."
+)
+
+with st.expander("📚 New to clinical trials? Start here"):
+    st.write(
+        "Clinical trials are research studies that test new treatments, devices, "
+        "or new ways of using existing treatments. Anyone can browse "
+        "ClinicalTrials.gov to see what's recruiting — there's no obligation, "
+        "and reaching out to a study team is always your choice."
+    )
+    st.markdown(
+        "Read ClinicalTrials.gov's official guide: "
+        "[How to Join a Study](https://clinicaltrials.gov/find-studies/for-patients/how-to-join)."
+    )
+
+st.write("**Try an example search:**")
+example_cols = st.columns(3)
+for ex_col, (ex_condition, ex_location) in zip(
+    example_cols,
+    [("Diabetes", "Boston, MA"), ("Breast Cancer", "10001"), ("Asthma", "Chicago, IL")],
+):
+    with ex_col:
+        if st.button(f"{ex_condition} near {ex_location}", use_container_width=True):
+            st.session_state["condition_input"] = ex_condition
+            st.session_state["location_input"] = ex_location
+            st.rerun()
 
 params = st.query_params
 default_condition = params.get("condition", "")
@@ -46,10 +74,15 @@ if default_radius not in RADIUS_OPTIONS:
 
 with st.form("search_form"):
     condition = st.text_input(
-        "Disease or condition", value=default_condition, placeholder="e.g., rheumatoid arthritis"
+        "Disease or condition",
+        value=default_condition,
+        placeholder="e.g., rheumatoid arthritis",
+        key="condition_input",
     )
     st.caption('Tip: combine terms with OR, e.g. "diabetes OR prediabetes".')
-    location = st.text_input("Location", value=default_location, placeholder="e.g., Boston, MA or 02115")
+    location = st.text_input(
+        "Location", value=default_location, placeholder="e.g., Boston, MA or 02115", key="location_input"
+    )
     recruiting_only = st.checkbox("Recruiting only", value=default_recruiting)
     page_size = st.selectbox(
         "Results", options=PAGE_SIZE_OPTIONS, index=PAGE_SIZE_OPTIONS.index(default_page_size)
@@ -153,25 +186,70 @@ if search:
         writer.writerow(
             ["NCT ID", "Title", "Status", "Phase", "Study Type", "Sponsor", "Score", "Nearest Site (mi)", "Link"]
         )
-
-        for score, reasons, breakdown, sites, study in ranked:
+        for score, _, _, sites, study in ranked:
             nct_id = study["nct_id"] or "Unknown"
-            title = study["brief_title"] or "Untitled study"
-            link = f"https://clinicaltrials.gov/study/{nct_id}" if nct_id != "Unknown" else ""
             nearest_distance = sites[0][1] if sites and sites[0][1] is not None else ""
             writer.writerow(
                 [
                     nct_id,
-                    title,
+                    study["brief_title"] or "Untitled study",
                     study["overall_status"] or "",
                     ", ".join(study["phases"]),
                     study["study_type"] or "",
                     study["lead_sponsor"] or "",
                     score,
                     f"{nearest_distance:.1f}" if nearest_distance != "" else "",
-                    link,
+                    f"https://clinicaltrials.gov/study/{nct_id}" if nct_id != "Unknown" else "",
                 ]
             )
+
+        toolbar_col1, toolbar_col2 = st.columns(2)
+        with toolbar_col1:
+            st.download_button(
+                "⬇️ Download results as CSV",
+                data=csv_buffer.getvalue(),
+                file_name="clinical_trials_results.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        with toolbar_col2:
+            compare_options = {
+                f"{study['brief_title'] or 'Untitled study'} ({study['nct_id'] or 'Unknown'})": study
+                for _, _, _, _, study in ranked
+            }
+            selected_labels = st.multiselect(
+                "⚖️ Compare eligibility criteria",
+                options=list(compare_options.keys()),
+                help="Select trials from the results below to view their eligibility side by side.",
+            )
+
+        if selected_labels:
+            compare_cols = st.columns(len(selected_labels))
+            for col, label in zip(compare_cols, selected_labels):
+                compare_study = compare_options[label]
+                with col:
+                    st.markdown(f"**{compare_study['brief_title'] or 'Untitled study'}**")
+                    st.caption(compare_study["nct_id"] or "Unknown")
+                    st.write(f"**Status:** {compare_study['overall_status'] or 'Unknown'}")
+                    if compare_study["phases"]:
+                        st.write(f"**Phase:** {', '.join(compare_study['phases'])}")
+                    elig = compare_study["eligibility"]
+                    elig_bits = []
+                    if elig["sex"]:
+                        elig_bits.append(elig["sex"])
+                    if elig["minimum_age"] or elig["maximum_age"]:
+                        elig_bits.append(f"{elig['minimum_age'] or 'N/A'} – {elig['maximum_age'] or 'N/A'}")
+                    if elig_bits:
+                        st.write(f"**Listed eligibility:** {' | '.join(elig_bits)}")
+                    st.markdown("**Full eligibility criteria:**")
+                    st.text(elig["criteria"] or "Not listed.")
+
+        st.divider()
+
+        for score, reasons, breakdown, sites, study in ranked:
+            nct_id = study["nct_id"] or "Unknown"
+            title = study["brief_title"] or "Untitled study"
+            link = f"https://clinicaltrials.gov/study/{nct_id}" if nct_id != "Unknown" else ""
 
             with st.container(border=True):
                 st.markdown(f"### {title}")
@@ -281,44 +359,6 @@ if search:
                 if nct_id != "Unknown":
                     st.link_button("View official record", link)
 
-        st.download_button(
-            "Download results as CSV",
-            data=csv_buffer.getvalue(),
-            file_name="clinical_trials_results.csv",
-            mime="text/csv",
-        )
-
-        st.divider()
-        st.subheader("Compare eligibility criteria")
-        compare_options = {
-            f"{study['brief_title'] or 'Untitled study'} ({study['nct_id'] or 'Unknown'})": study
-            for _, _, _, _, study in ranked
-        }
-        selected_labels = st.multiselect(
-            "Select trials from the results above to compare their eligibility side by side",
-            options=list(compare_options.keys()),
-        )
-        if selected_labels:
-            compare_cols = st.columns(len(selected_labels))
-            for col, label in zip(compare_cols, selected_labels):
-                compare_study = compare_options[label]
-                with col:
-                    st.markdown(f"**{compare_study['brief_title'] or 'Untitled study'}**")
-                    st.caption(compare_study["nct_id"] or "Unknown")
-                    st.write(f"**Status:** {compare_study['overall_status'] or 'Unknown'}")
-                    if compare_study["phases"]:
-                        st.write(f"**Phase:** {', '.join(compare_study['phases'])}")
-                    elig = compare_study["eligibility"]
-                    elig_bits = []
-                    if elig["sex"]:
-                        elig_bits.append(elig["sex"])
-                    if elig["minimum_age"] or elig["maximum_age"]:
-                        elig_bits.append(f"{elig['minimum_age'] or 'N/A'} – {elig['maximum_age'] or 'N/A'}")
-                    if elig_bits:
-                        st.write(f"**Listed eligibility:** {' | '.join(elig_bits)}")
-                    st.markdown("**Full eligibility criteria:**")
-                    st.text(elig["criteria"] or "Not listed.")
-
         if search["next_page_token"]:
             if st.button("Load more results"):
                 with st.spinner("Loading more..."):
@@ -344,8 +384,4 @@ st.divider()
 st.caption(
     "ClinicalTrials.gov listings may be incomplete or out of date. "
     "Contact the study site to confirm availability and eligibility."
-)
-st.markdown(
-    "New to clinical trials? Read ClinicalTrials.gov's official guide: "
-    "[How to Join a Study](https://clinicaltrials.gov/find-studies/for-patients/how-to-join)."
 )

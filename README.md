@@ -97,6 +97,14 @@ generated.
   official guide, [How to Join a
   Study](https://clinicaltrials.gov/find-studies/for-patients/how-to-join), next
   to the disclaimer.
+- **v8 — Friendlier, more discoverable layout**: moved the CSV download and
+  "Compare eligibility criteria" tools from the bottom of the page to
+  directly above the results list, right after the summary/map, so they're
+  visible without scrolling past every result. Moved the "How to Join a
+  Study" link to the top of the page inside a new "New to clinical trials?
+  Start here" expander with a short, non-prescriptive explainer. Added a
+  data-source credibility caption and three one-click example searches
+  (condition + location presets) to lower the barrier to a first search.
 
 ## Disclaimer
 
